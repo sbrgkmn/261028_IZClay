@@ -2,6 +2,8 @@ import { useMemo, useEffect } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Bounds, ContactShadows } from '@react-three/drei'
 import * as THREE from 'three'
+import {PrintAnimation} from './PrintAnimation'
+import type {PrintTimeline} from './playback'
 import { type Study, type Config, planExtrusion } from './engine'
 function Geometry({study,c,mode,layer,only}:{study:Study;c:Config;mode:string;layer:number;only:boolean}){
  const geometry=useMemo(()=>{
@@ -27,10 +29,10 @@ function Geometry({study,c,mode,layer,only}:{study:Study;c:Config;mode:string;la
  useEffect(()=>()=>geometry.dispose(),[geometry])
  return mode==='toolpath'?<lineSegments geometry={geometry}><lineBasicMaterial vertexColors transparent opacity={.85}/></lineSegments>:<mesh geometry={geometry} castShadow receiveShadow><meshStandardMaterial vertexColors roughness={.87} side={THREE.DoubleSide}/></mesh>
 }
-export function Scene(props:{study:Study;c:Config;mode:string;layer:number;only:boolean;reset:number}){
+export function Scene(props:{study:Study;c:Config;mode:string;layer:number;only:boolean;reset:number;timeline:PrintTimeline;seconds:number}){
  return <Canvas shadows camera={{position:[230,180,250],fov:38}} dpr={[1,1.5]} gl={{preserveDrawingBuffer:true}}>
   <color attach="background" args={['#eae7df']}/><ambientLight intensity={1.1}/><hemisphereLight args={['#fff9ed','#a18d7a',1.4]}/><directionalLight position={[-140,240,160]} intensity={3} castShadow shadow-mapSize={[1024,1024]}/><directionalLight position={[160,90,-140]} intensity={1.2}/>
-  <Bounds key={`${props.reset}-${props.c.height}-${props.c.diameter}`} fit clip margin={1.25}><group position={[0,-props.c.height/2,0]}><Geometry {...props}/></group></Bounds>
+  <Bounds key={`${props.reset}-${props.c.height}-${props.c.diameter}`} fit clip margin={1.25}><group position={[0,-props.c.height/2,0]}>{props.mode==='animation'?<PrintAnimation timeline={props.timeline} seconds={props.seconds} nozzle={props.c.nozzle}/>:<Geometry {...props}/>}</group></Bounds>
   <ContactShadows position={[0,-props.c.height/2,0]} opacity={.28} scale={500} blur={2.6} far={260} resolution={256} frames={1}/>
   <OrbitControls makeDefault minDistance={30} maxDistance={900}/>
  </Canvas>

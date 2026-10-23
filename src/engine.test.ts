@@ -9,7 +9,7 @@ describe('periodic patterns',()=>{
 describe('fabrication paths',()=>{
  for(const treatment of ['relief','beads','loops'] as const)it(`${treatment} closes every path and preserves the inner wall`,()=>{
   for(const {id} of motifs)for(const profile of ['cylinder','barrel','taper'] as const){
-   const c=normalize({...defaults,treatment,motif:id,profile,height:20,margin:0,pitch:8,layer:2})
+   const c=normalize({...defaults,passes:2,seamMode:'stepped',treatment,motif:id,profile,height:20,margin:0,pitch:8,layer:2})
    const study=generate(c)
    expect(study.layers).toBe(10)
    expect(study.paths.length).toBe(20)
@@ -27,7 +27,7 @@ describe('fabrication paths',()=>{
   expect(c.diameter/2-c.shape-c.bead*(c.passes-1)*.85).toBeGreaterThanOrEqual(5)
  })
  it('moves while retracting before each disconnected travel, with exact E withdrawal',()=>{
-  const c={...defaults,height:20,layer:2},study=generate(c),plan=planExtrusion(c,study)
+  const c:Config={...defaults,seamMode:'stepped',height:20,layer:2},study=generate(c),plan=planExtrusion(c,study)
   for(const p of plan){
    expect(p.stationaryRetraction).toBe(0)
    expect(p.moves.filter(m=>m.phase==='retract').reduce((sum,m)=>sum+m.deltaE,0)).toBeCloseTo(-c.retraction,7)
@@ -87,13 +87,13 @@ describe('seam control and nozzle calibration',()=>{
   expect(study.paths.at(-1)?.points.at(-1)?.z).toBe(81)
   const exact80=generate({...c,height:80});expect(exact80.paths.at(-1)?.points.at(-1)?.z).toBe(80)
  })
- it('preserves separate layers for multiple walls, beads, loops and explicit stepped mode',()=>{
-  for(const c of [normalize({passes:2,treatment:'relief'}),normalize({passes:1,treatment:'beads'}),normalize({passes:1,treatment:'loops'}),normalize({passes:1,treatment:'relief',seamMode:'stepped'})]){
+ it('preserves separate layers for multiple walls and explicit stepped mode',()=>{
+  for(const c of [normalize({passes:2,treatment:'relief'}),normalize({passes:1,treatment:'relief',seamMode:'stepped'})]){
    expect(usesSpiral(c)).toBe(false);expect(generate({...c,height:20}).paths.every(p=>!p.continuous)).toBe(true)
   }
  })
  it('supports turning off early retraction and reducing restart recovery independently',()=>{
-  const c=normalize({height:20,layer:2,retractLead:0,coast:0,restart:50})
+  const c=normalize({seamMode:'stepped',height:20,layer:2,retractLead:0,coast:0,restart:50})
   const plan=planExtrusion(c,generate(c))
   expect(plan.every(p=>p.stationaryRetraction===8)).toBe(true)
   const noRecovery=planExtrusion({...c,restart:0},generate(c))
@@ -105,5 +105,30 @@ describe('seam control and nozzle calibration',()=>{
   const c=normalize({height:21,layer:2,passes:1,treatment:'relief',projection:0,seamMode:'stepped',coast:0,retractLead:0,retraction:0})
   const plan=planExtrusion(c,generate(c)),total=(p:typeof plan[number])=>p.moves.reduce((s,m)=>s+m.deltaE,0)
   expect(total(plan.at(-1)!)/total(plan[0])).toBeCloseTo(.5,8)
+ })
+})
+
+describe('vase mode for every texture',()=>{
+ for(const treatment of ['relief','beads','loops'] as const)it(`${treatment} has one rising path and no per-turn pressure event`,()=>{
+  for(const profile of ['cylinder','barrel','taper'] as const){
+   const c=normalize({treatment,profile,height:24,layer:2,margin:0,projection:4,pitch:8,every:2,motif:'chevron'})
+   const study=generate(c),plan=planExtrusion(c,study)
+   expect(usesSpiral(c)).toBe(true)
+   for(let l=1;l<study.paths.length;l++){
+    const p=study.paths[l],prev=study.paths[l-1]
+    expect(p.points[0]).toEqual(prev.points.at(-1))
+    for(let i=1;i<p.points.length;i++)if(p.points[i].z<=p.points[i-1].z)throw Error(`Flat or descending spiral segment ${l}:${i}`)
+   }
+   expect(plan.filter(p=>!p.connected).length).toBe(1)
+   expect(plan.slice(0,-1).flatMap(p=>p.moves).every(m=>m.phase==='print'&&m.deltaE>=0)).toBe(true)
+   expect(plan.flatMap(p=>p.moves).some(m=>m.phase==='recovery')).toBe(false)
+   const body=exportGcode(c,study).split(';BEGIN_PRINT')[1].split(';END_PRINT')[0]
+   expect((body.match(/G0 /g)||[]).length).toBe(1)
+   if(treatment==='loops')expect(study.excursions).toBeGreaterThan(0)
+  }
+ })
+ it('starts new studies in spiral and marks old multi-wall studies as stepped',()=>{
+  expect(usesSpiral(defaults)).toBe(true)
+  expect(normalize({passes:2,seamMode:'auto'}).seamMode).toBe('stepped')
  })
 })

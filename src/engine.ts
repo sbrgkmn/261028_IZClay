@@ -1,7 +1,7 @@
 import { PRINTER_PROFILES } from './clayflow/profiles'
 export type Motif = 'arches' | 'rosettes' | 'meander' | 'chevron' | 'weave' | 'blend'
 export type Config = { motif: Motif; treatment: 'relief' | 'beads' | 'loops'; profile: 'cylinder' | 'barrel' | 'taper'; seamMode:'auto'|'stepped'; coast:number; retractLead:number; restart:number; recoveryDistance:number; nozzle:number; diameter:number; height:number; shape:number; repeats:number; pitch:number; ridge:number; projection:number; phase:number; twist:number; margin:number; spacing:number; every:number; layer:number; bead:number; passes:number; speed:number; flow:number; textureFlow:number; retraction:number; lift:number }
-export const defaults: Config = { motif:'arches', treatment:'beads', profile:'cylinder', nozzle:3,diameter:100,height:140,shape:12,repeats:10,pitch:24,ridge:2.4,projection:3.5,phase:0,twist:0,margin:8,spacing:5,every:2,layer:1.4,bead:3,passes:2,speed:22,flow:100,textureFlow:115,retraction:8,lift:1,seamMode:'auto',coast:2,retractLead:1,restart:100,recoveryDistance:24 }
+export const defaults: Config = { motif:'arches', treatment:'beads', profile:'cylinder', nozzle:3,diameter:100,height:140,shape:12,repeats:10,pitch:24,ridge:2.4,projection:3.5,phase:0,twist:0,margin:8,spacing:5,every:2,layer:1.4,bead:3,passes:1,speed:22,flow:100,textureFlow:115,retraction:8,lift:1,seamMode:'auto',coast:2,retractLead:1,restart:100,recoveryDistance:24 }
 export const motifs: Array<{id:Motif;title:string;note:string;ref:string}> = [
  {id:'arches',title:'Scalloped arches',note:'Overlapping vaults · concept study',ref:'concept-relief.jpg'},
  {id:'rosettes',title:'Floral lattice',note:'Rosettes & interlocking frames',ref:'column-floral.jpg'},
@@ -39,8 +39,9 @@ export type Point={x:number;y:number;z:number;strength:number}
 export type Path={points:Point[];kind:'wall'|'texture';layer:number;continuous?:boolean;layerHeight?:number;startLayerHeight?:number}
 export type Study={paths:Path[];layers:number;length:number;excursions:number;maxStep:number;maxRadius:number;points:number;minutes:number}
 export const distance=(a:Point,b:Point)=>Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z)
-export const usesSpiral=(c:Config)=>c.seamMode==='auto'&&c.passes===1&&c.treatment==='relief'
+export const usesSpiral=(c:Config)=>c.seamMode==='auto'&&c.passes===1
 export function generate(c:Config):Study {
+ if(usesSpiral(c))return generateSpiral(c)
  const paths:Path[]=[], layers=Math.ceil(c.height/c.layer)
  let length=0,excursions=0,maxStep=0,maxRadius=0,totalPoints=0
  const sites=Math.max(c.repeats*6,Math.round(TAU*c.diameter/2/c.spacing))
@@ -77,6 +78,47 @@ export function generate(c:Config):Study {
  }
  return {paths,layers,length,excursions,maxStep,maxRadius,points:totalPoints,minutes:length/c.speed/60}
 }
+// A flat anchor ring followed by rising revolutions for every texture gesture.
+// Turn records are preview markers only: adjacent records share one endpoint.
+function generateSpiral(c:Config):Study {
+ const layers=Math.ceil(c.height/c.layer-1e-9),paths:Path[]=[]
+ const sites=Math.max(c.repeats*6,Math.round(TAU*c.diameter/2/c.spacing))
+ const count=Math.min(1440,Math.max(240,Math.ceil(TAU*(c.diameter/2+c.shape+c.projection)/.9),sites*8))
+ let length=0,excursions=0,maxRadius=0,totalPoints=0
+ const point=(a:number,r:number,z:number,strength:number):Point=>({x:r*Math.cos(a),y:r*Math.sin(a),z,strength})
+ for(let l=0;l<layers;l++){
+  const startZ=l===0?c.layer:l*c.layer,endZ=Math.min(c.height,(l+1)*c.layer),points:Point[]=[]
+  for(let j=0;j<=count;j++){
+   const a=j===count?0:j/count*TAU,z=startZ+(endZ-startZ)*j/count
+   let strength=patternAt(c,a,z)
+   if(c.treatment==='beads'){
+    // Phase and cadence vary continuously with height, including at 0° / 360°.
+    const turn=(z/c.layer-1)/c.every
+    strength*=Math.max(0,Math.cos(a*sites+Math.PI*turn))**6*(.1+.9*(.5+.5*Math.cos(TAU*turn))**4)
+   }
+   const r=radiusAt(c,z)
+   points.push(point(a,r+(c.treatment==='loops'?0:c.projection*strength),z,c.treatment==='loops'?0:strength))
+   if(c.treatment==='loops'&&j<count&&l%c.every===0&&strength>.35&&c.projection>0&&Math.floor(j/count*sites)!==Math.floor((j-1)/count*sites)){
+    const root=points.at(-1)!,depth=c.projection*strength,span=Math.min(c.spacing*.65,Math.max(c.bead,depth))
+    for(let k=1;k<=16;k++){const t=k/16*TAU,out=depth*(1-Math.cos(t))/2,side=span*Math.sin(t)/2;points.push({x:root.x+out*Math.cos(a)-side*Math.sin(a),y:root.y+out*Math.sin(a)+side*Math.cos(a),z,strength:Math.sin(t/2)**2*strength})}
+    excursions++
+   }
+  }
+  if(c.treatment==='loops'&&l>0){
+   // Spread the rise across the complete looped path, not just its circular portions.
+   const lengths=points.slice(1).map((p,i)=>Math.hypot(p.x-points[i].x,p.y-points[i].y)),total=lengths.reduce((a,b)=>a+b,0)
+   let walked=0
+   for(let i=0;i<points.length;i++){if(i)walked+=lengths[i-1];const p=points[i],z=startZ+(endZ-startZ)*walked/total;const radius=Math.hypot(p.x,p.y),dr=radiusAt(c,z)-radiusAt(c,p.z);p.x*=1+dr/radius;p.y*=1+dr/radius;p.z=z}
+   points[points.length-1]=point(0,radiusAt(c,endZ),endZ,0)
+  }
+  if(l>0)points[0]={...paths[l-1].points.at(-1)!}
+  for(let i=1;i<points.length;i++)length+=distance(points[i-1],points[i])
+  for(const p of points)maxRadius=Math.max(maxRadius,Math.hypot(p.x,p.y))
+  totalPoints+=points.length
+  paths.push({points,kind:'texture',layer:l,continuous:l>0,layerHeight:endZ-l*c.layer,startLayerHeight:l===1?0:l===0?c.layer:c.layer})
+ }
+ return {paths,layers,length,excursions,maxStep:0,maxRadius,points:totalPoints,minutes:length/c.speed/60}
+}
 const ranges:Record<string,[number,number]>={nozzle:[2,8],diameter:[40,250],height:[20,300],shape:[0,25],repeats:[3,24],pitch:[8,60],ridge:[1,8],projection:[0,15],phase:[0,360],twist:[-180,180],margin:[0,30],spacing:[3,16],every:[1,6],layer:[.6,3],bead:[2,12],passes:[1,3],speed:[5,60],flow:[30,160],textureFlow:[50,200],retraction:[0,80],lift:[0,8],coast:[0,8],retractLead:[0,5],restart:[0,100],recoveryDistance:[5,60]}
 export function normalize(input:unknown):Config {
  if(!input||typeof input!=='object')throw Error('This is not a study file.')
@@ -85,6 +127,8 @@ export function normalize(input:unknown):Config {
  if(raw.bead===undefined&&typeof raw.nozzle==='number'&&Number.isFinite(raw.nozzle))c.bead=c.nozzle
  for(const k of ['repeats','every','passes'] as const)c[k]=Math.round(c[k])
  if(raw.seamMode==='stepped'||raw.seamMode==='auto')c.seamMode=raw.seamMode
+ // Preserve legacy multi-wall studies explicitly as stepped rather than silently labelling them spiral.
+ if(c.passes>1)c.seamMode='stepped'
  if(motifs.some(m=>m.id===raw.motif))c.motif=raw.motif as Motif
  if(['relief','beads','loops'].includes(String(raw.treatment)))c.treatment=raw.treatment as Config['treatment']
  if(['cylinder','barrel','taper'].includes(String(raw.profile)))c.profile=raw.profile as Config['profile']
