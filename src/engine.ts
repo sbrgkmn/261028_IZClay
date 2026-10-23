@@ -1,7 +1,7 @@
 import { PRINTER_PROFILES } from './clayflow/profiles'
 export type Motif = 'arches' | 'rosettes' | 'meander' | 'chevron' | 'weave' | 'blend'
-export type Config = { motif: Motif; treatment: 'relief' | 'beads' | 'loops'; profile: 'cylinder' | 'barrel' | 'taper'; diameter:number; height:number; shape:number; repeats:number; pitch:number; ridge:number; projection:number; phase:number; twist:number; margin:number; spacing:number; every:number; layer:number; bead:number; passes:number; speed:number; flow:number; textureFlow:number; retraction:number; lift:number }
-export const defaults: Config = { motif:'arches', treatment:'beads', profile:'cylinder', diameter:100,height:140,shape:12,repeats:10,pitch:24,ridge:2.4,projection:3.5,phase:0,twist:0,margin:8,spacing:5,every:2,layer:1.4,bead:4.6,passes:2,speed:22,flow:100,textureFlow:115,retraction:8,lift:1 }
+export type Config = { motif: Motif; treatment: 'relief' | 'beads' | 'loops'; profile: 'cylinder' | 'barrel' | 'taper'; seamMode:'auto'|'stepped'; coast:number; retractLead:number; restart:number; recoveryDistance:number; nozzle:number; diameter:number; height:number; shape:number; repeats:number; pitch:number; ridge:number; projection:number; phase:number; twist:number; margin:number; spacing:number; every:number; layer:number; bead:number; passes:number; speed:number; flow:number; textureFlow:number; retraction:number; lift:number }
+export const defaults: Config = { motif:'arches', treatment:'beads', profile:'cylinder', nozzle:3,diameter:100,height:140,shape:12,repeats:10,pitch:24,ridge:2.4,projection:3.5,phase:0,twist:0,margin:8,spacing:5,every:2,layer:1.4,bead:3,passes:2,speed:22,flow:100,textureFlow:115,retraction:8,lift:1,seamMode:'auto',coast:2,retractLead:1,restart:100,recoveryDistance:24 }
 export const motifs: Array<{id:Motif;title:string;note:string;ref:string}> = [
  {id:'arches',title:'Scalloped arches',note:'Overlapping vaults · concept study',ref:'concept-relief.jpg'},
  {id:'rosettes',title:'Floral lattice',note:'Rosettes & interlocking frames',ref:'column-floral.jpg'},
@@ -36,9 +36,10 @@ export function patternAt(c:Config,theta:number,z:number):number {
  return mask*edge
 }
 export type Point={x:number;y:number;z:number;strength:number}
-export type Path={points:Point[];kind:'wall'|'texture';layer:number}
+export type Path={points:Point[];kind:'wall'|'texture';layer:number;continuous?:boolean;layerHeight?:number;startLayerHeight?:number}
 export type Study={paths:Path[];layers:number;length:number;excursions:number;maxStep:number;maxRadius:number;points:number;minutes:number}
 export const distance=(a:Point,b:Point)=>Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z)
+export const usesSpiral=(c:Config)=>c.seamMode==='auto'&&c.passes===1&&c.treatment==='relief'
 export function generate(c:Config):Study {
  const paths:Path[]=[], layers=Math.ceil(c.height/c.layer)
  let length=0,excursions=0,maxStep=0,maxRadius=0,totalPoints=0
@@ -64,56 +65,104 @@ export function generate(c:Config):Study {
     points.push({...points[0]})
    } else {
     for(let j=0;j<=count;j++){
-     const a=(j===count?0:j/count*TAU);let strength=inner?0:patternAt(c,a,z)
+     const a=(j===count?0:j/count*TAU);const zz=usesSpiral(c)&&l>0?l*c.layer+(z-l*c.layer)*j/count:z;let strength=inner?0:patternAt(c,a,zz)
      if(c.treatment==='beads'){const pulse=Math.max(0,Math.cos(a*sites+(Math.floor(l/c.every)%2)*Math.PI))**6;strength*=pulse*(l%c.every===0?1:.1)}
-     points.push(point(a,rr+c.projection*strength,z,strength))
+     points.push(point(a,radiusAt(c,zz)-pass*c.bead*.85+c.projection*strength,zz,strength))
     }
    }
    for(let k=1;k<points.length;k++)length+=distance(points[k-1],points[k])
    for(const p of points)maxRadius=Math.max(maxRadius,Math.hypot(p.x,p.y))
-   totalPoints+=points.length;paths.push({points,kind:inner?'wall':'texture',layer:l})
+   totalPoints+=points.length;paths.push({points,kind:inner?'wall':'texture',layer:l,continuous:usesSpiral(c)&&l>0,layerHeight:z-l*c.layer,startLayerHeight:usesSpiral(c)&&l>0?(l===1?0:c.layer):z-l*c.layer})
   }
  }
  return {paths,layers,length,excursions,maxStep,maxRadius,points:totalPoints,minutes:length/c.speed/60}
 }
-const ranges:Record<string,[number,number]>={diameter:[40,200],height:[20,300],shape:[0,25],repeats:[3,24],pitch:[8,60],ridge:[1,8],projection:[0,15],phase:[0,360],twist:[-180,180],margin:[0,30],spacing:[3,16],every:[1,6],layer:[.6,3],bead:[2,8],passes:[1,3],speed:[5,60],flow:[30,160],textureFlow:[50,200],retraction:[0,80],lift:[0,8]}
+const ranges:Record<string,[number,number]>={nozzle:[2,8],diameter:[40,250],height:[20,300],shape:[0,25],repeats:[3,24],pitch:[8,60],ridge:[1,8],projection:[0,15],phase:[0,360],twist:[-180,180],margin:[0,30],spacing:[3,16],every:[1,6],layer:[.6,3],bead:[2,12],passes:[1,3],speed:[5,60],flow:[30,160],textureFlow:[50,200],retraction:[0,80],lift:[0,8],coast:[0,8],retractLead:[0,5],restart:[0,100],recoveryDistance:[5,60]}
 export function normalize(input:unknown):Config {
  if(!input||typeof input!=='object')throw Error('This is not a study file.')
  const c={...defaults},raw=input as Record<string,unknown>
  for(const [key,[min,max]] of Object.entries(ranges)){const v=raw[key];if(typeof v==='number'&&Number.isFinite(v))(c as unknown as Record<string,unknown>)[key]=clamp(v,min,max)}
+ if(raw.bead===undefined&&typeof raw.nozzle==='number'&&Number.isFinite(raw.nozzle))c.bead=c.nozzle
  for(const k of ['repeats','every','passes'] as const)c[k]=Math.round(c[k])
+ if(raw.seamMode==='stepped'||raw.seamMode==='auto')c.seamMode=raw.seamMode
  if(motifs.some(m=>m.id===raw.motif))c.motif=raw.motif as Motif
  if(['relief','beads','loops'].includes(String(raw.treatment)))c.treatment=raw.treatment as Config['treatment']
  if(['cylinder','barrel','taper'].includes(String(raw.profile)))c.profile=raw.profile as Config['profile']
+ if(c.passes>1)c.bead=Math.min(c.bead,(c.diameter/2-5)/((c.passes-1)*.85))
  if(c.diameter/2-c.shape-c.bead*(c.passes-1)*.85<5)c.shape=Math.max(0,c.diameter/2-c.bead*(c.passes-1)*.85-5)
  return c
 }
+export type ExtrusionMove={from:Point;to:Point;deltaE:number;phase:'print'|'recovery'|'coast'|'retract'}
+export type PlannedPath={path:Path;moves:ExtrusionMove[];connected:boolean;stationaryRetraction:number}
+// Split only along existing path segments, preserving the preview geometry.
+// Integrate linear flow taper and linear motif strength exactly over each piece.
+export function planExtrusion(c:Config,study:Study):PlannedPath[]{
+ const result:PlannedPath[]=[]
+ const base=3.426*(c.bead*c.layer/(5*1.5))*c.flow/100
+ for(let index=0;index<study.paths.length;index++){
+  const path=study.paths[index],previous=study.paths[index-1],next=study.paths[index+1]
+  const connected=!!previous&&!!path.continuous
+  if(connected&&distance(previous.points.at(-1)!,path.points[0])>1e-6)throw Error('Spiral paths must meet exactly.')
+  const lengths=path.points.slice(1).map((b,i)=>distance(path.points[i],b))
+  const total=lengths.reduce((a,b)=>a+b,0),ending=!next?.continuous
+  const lead=ending&&c.retraction>0?Math.min(c.retractLead,total*.1):0
+  const coast=ending?Math.min(c.coast,total*.1):0
+  const retractStart=total-lead,coastStart=retractStart-coast
+  const recovery=index>0&&!connected?c.retraction*c.restart/100:0
+  const recoverOver=Math.min(c.recoveryDistance,Math.max(.001,coastStart))
+  const endHeight=path.layerHeight??c.layer,startHeight=path.startLayerHeight??endHeight
+  const moves:ExtrusionMove[]=[];let walked=0
+  const mix=(a:Point,b:Point,t:number):Point=>({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,z:a.z+(b.z-a.z)*t,strength:a.strength+(b.strength-a.strength)*t})
+  for(let i=1;i<path.points.length;i++){
+   const len=lengths[i-1];if(len<1e-9)continue
+   const a=path.points[i-1],b=path.points[i],end=walked+len
+   const cuts=[walked,...[coastStart,retractStart,recoverOver].filter(t=>t>walked+1e-9&&t<end-1e-9),end].sort((a,b)=>a-b)
+   for(let k=1;k<cuts.length;k++){
+    const lo=cuts[k-1],hi=cuts[k],length=hi-lo
+    if(length<1e-9)continue
+    const from=mix(a,b,(lo-walked)/len),to=mix(a,b,(hi-walked)/len)
+    let deltaE:number,phase:ExtrusionMove['phase']='print'
+    if(lead>0&&lo>=retractStart-1e-8){deltaE=-c.retraction*length/lead;phase='retract'}
+    else{
+     const flowA=1+from.strength*(c.textureFlow/100-1),flowB=1+to.strength*(c.textureFlow/100-1)
+     const taper=(d:number)=>coast>0?clamp((retractStart-d)/coast,0,1):1
+     const ta=taper(lo),tb=taper(hi)
+     const thickness=(d:number)=>(startHeight+(endHeight-startHeight)*(i-1+(d-walked)/len)/(path.points.length-1))/c.layer
+     const ha=thickness(lo),hb=thickness(hi)
+     deltaE=base*length*(flowA*ta*ha+4*(flowA+flowB)/2*(ta+tb)/2*(ha+hb)/2+flowB*tb*hb)/6
+     if(ta<1||tb<1)phase='coast'
+     if(recovery>0&&lo<recoverOver-1e-8){deltaE+=recovery*length/recoverOver;phase='recovery'}
+    }
+    moves.push({from,to,deltaE,phase})
+   }
+   walked=end
+  }
+  result.push({path,moves,connected,stationaryRetraction:ending&&lead===0?c.retraction:0})
+ }
+ return result
+}
 export function exportGcode(c:Config,study:Study){
- const printer=PRINTER_PROFILES[0], ox=printer.buildVolume.x/2,oy=printer.buildVolume.y/2
+ const printer=PRINTER_PROFILES[0],ox=printer.buildVolume.x/2,oy=printer.buildVolume.y/2
  if(c.height+150>printer.buildVolume.z||study.maxRadius+c.bead/2>Math.min(ox,oy))throw Error('The form or end lift exceeds the Super 10 envelope.')
  const all=study.paths.flatMap(p=>p.points)
  if(!all.length||all.some(p=>![p.x,p.y,p.z,p.strength].every(Number.isFinite)))throw Error('Invalid toolpath coordinates.')
- const lines=['; IZ / BIENNALE PATTERN STUDY — EXPERIMENTAL',`; Motif: ${c.motif}; treatment: ${c.treatment}`,`; Projection ${c.projection} mm; patterned flow ${c.textureFlow}%`, '; Intentional outward excursions are NOT certified self-supporting.', '; Open-bottom wall coupon. Preview shows commanded geometry, not sag or ooze.', '; Super 10 scripts and empirical extrusion calibration inherited from ClayFlow.',...printer.startScript,'G90','M82','G92 E0']
- const f=(v:number)=>v.toFixed(4);let e=0,started=false,layer=-1
- const empirical=3.426*(c.bead*c.layer/(5*1.5))*c.flow/100
- for(const path of study.paths){
+ const lines=['; IZ / BIENNALE PATTERN STUDY — EXPERIMENTAL',`; Motif: ${c.motif}; treatment: ${c.treatment}`,`; Nozzle ${c.nozzle} mm; bead width ${c.bead} mm; wall flow ${c.flow}%`,`; Diameter ${c.diameter} mm; height ${c.height} mm; layer ${c.layer} mm; wall passes ${c.passes}`,`; Path mode: ${usesSpiral(c)?'continuous spiral':'stepped layers'}`,`; Coast ${c.coast} mm; early retract ${c.retractLead} mm; retract ${c.retraction} E; restart ${c.restart}% over ${c.recoveryDistance} mm`,`; Projection ${c.projection} mm; patterned flow ${c.textureFlow}%`,'; Intentional outward excursions are NOT certified self-supporting.','; Open-bottom coupon. Preview is nominal bead geometry, not sag or pressure simulation.',...printer.startScript,'G90','M82','G92 E0',';BEGIN_PRINT']
+ const f=(v:number)=>v.toFixed(4);let e=0,layer=-1
+ const plan=planExtrusion(c,study)
+ for(let index=0;index<plan.length;index++){
+  const {path,moves,connected,stationaryRetraction}=plan[index]
   if(path.layer!==layer){layer=path.layer;lines.push(`;LAYER:${layer}`)}
   const a=path.points[0]
-  if(started){e-=c.retraction;lines.push(`G1 E${f(e)} F60000 ; Pressure relief before travel`)}
-  const lift=Math.min(printer.buildVolume.z,a.z+c.lift)
-  if(started&&c.lift>0)lines.push(`G0 Z${f(lift)} F2400`)
-  lines.push(`G0 X${f(a.x+ox)} Y${f(a.y+oy)} Z${f(started?lift:a.z)} F2880`)
-  if(started&&c.lift>0)lines.push(`G0 Z${f(a.z)} F2400`)
-  let recovery=started?c.retraction:0
-  for(let i=1;i<path.points.length;i++){
-   const b=path.points[i],a=path.points[i-1],len=distance(a,b)
-   if(len<1e-8)continue
-   const strength=(a.strength+b.strength)/2,extra=Math.min(recovery,c.retraction*len/12);recovery-=extra
-   e+=len*empirical*(1+strength*(c.textureFlow/100-1))+extra
-   lines.push(`G1 X${f(b.x+ox)} Y${f(b.y+oy)} Z${f(b.z)} E${f(e)} F${Math.round(c.speed*60)}${strength>.1?' ; Pattern excursion':''}`)
-  }
-  started=true
-  if(e>10000){lines.push('G92 E0');e=0}
+  if(!connected){
+   const lift=a.z+(index>0?c.lift:0)
+   if(index>0&&c.lift>0)lines.push(`G0 Z${f(lift)} F2400`)
+   lines.push(`G0 X${f(a.x+ox)} Y${f(a.y+oy)} Z${f(lift)} F2880`)
+   if(index>0&&c.lift>0)lines.push(`G0 Z${f(a.z)} F2400`)
+  }else lines.push('; Continuous rise — no travel, retract or restart at this turn')
+  for(const move of moves){const b=move.to;e+=move.deltaE;lines.push(`G1 X${f(b.x+ox)} Y${f(b.y+oy)} Z${f(b.z)} E${f(e)} F${Math.round(c.speed*60)} ; ${move.phase}`)}
+  if(stationaryRetraction>0){e-=stationaryRetraction;lines.push(`G1 E${f(e)} F60000 ; Stationary pressure relief (early retract disabled)`)}
+  // Reset only where motion is already interrupted, never between spiral turns.
+  if(e>10000&&plan[index+1]&&!plan[index+1].connected){lines.push('G92 E0');e=0}
  }
  return [...lines,';END_PRINT',...printer.endScript,'; End IZ study'].join('\n')+'\n'
 }

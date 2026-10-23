@@ -2,14 +2,16 @@ import { useMemo, useEffect } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Bounds, ContactShadows } from '@react-three/drei'
 import * as THREE from 'three'
-import { type Study, type Config } from './engine'
+import { type Study, type Config, planExtrusion } from './engine'
 function Geometry({study,c,mode,layer,only}:{study:Study;c:Config;mode:string;layer:number;only:boolean}){
  const geometry=useMemo(()=>{
   const positions:number[]=[],colors:number[]=[],indices:number[]=[]
   const paths=study.paths.filter(p=>p.layer<=layer&&(!only||p.layer===layer))
   const clay=new THREE.Color('#c9a78b'),decor=new THREE.Color('#aa7656'),line=new THREE.Color('#657e78'),active=new THREE.Color('#ae482f')
   if(mode==='toolpath'){
-   for(const path of paths)for(let i=1;i<path.points.length;i++){const a=path.points[i-1],b=path.points[i];const col=(path.layer===layer?active:line).clone().lerp(decor,b.strength*.5);positions.push(a.x,a.z,a.y,b.x,b.z,b.y);colors.push(...col.toArray(),...col.toArray())}
+   const planned=planExtrusion(c,study).filter(p=>p.path.layer<=layer&&(!only||p.path.layer===layer))
+   const phaseColors={coast:new THREE.Color('#b77919'),retract:new THREE.Color('#8848b3'),recovery:new THREE.Color('#247bb3')}
+   for(const {path,moves} of planned)for(const move of moves){const a=move.from,b=move.to;const col=move.phase==='print'?(path.layer===layer?active:line):phaseColors[move.phase];positions.push(a.x,a.z,a.y,b.x,b.z,b.y);colors.push(...col.toArray(),...col.toArray())}
   }else{
    const sides=6
    for(const path of paths){const offset=positions.length/3;for(let i=0;i<path.points.length;i++){
@@ -21,7 +23,7 @@ function Geometry({study,c,mode,layer,only}:{study:Study;c:Config;mode:string;la
    }}
   }
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));if(mode!=='toolpath'){g.setIndex(indices);g.computeVertexNormals()}return g
- },[study,c.bead,c.layer,mode,layer,only])
+ },[study,c,mode,layer,only])
  useEffect(()=>()=>geometry.dispose(),[geometry])
  return mode==='toolpath'?<lineSegments geometry={geometry}><lineBasicMaterial vertexColors transparent opacity={.85}/></lineSegments>:<mesh geometry={geometry} castShadow receiveShadow><meshStandardMaterial vertexColors roughness={.87} side={THREE.DoubleSide}/></mesh>
 }

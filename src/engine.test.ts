@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {defaults,normalize,generate,patternAt,radiusAt,exportGcode,motifs,type Config} from './engine'
+import {defaults,normalize,generate,patternAt,radiusAt,exportGcode,motifs,planExtrusion,usesSpiral,type Config} from './engine'
 describe('periodic patterns',()=>{
  for(const {id} of motifs)it(`${id} meets across the cylinder seam`,()=>{
   const c={...defaults,motif:id,margin:0,phase:37,twist:65}
@@ -22,23 +22,88 @@ describe('fabrication paths',()=>{
   expect(study.maxRadius).toBeCloseTo(c.diameter/2,9)
  })
  it('normalizes imported settings and keeps the inner radius positive',()=>{
-  const c=normalize({diameter:1,height:Infinity,passes:99,shape:100,bead:8,repeats:4.4,motif:'invalid'})
+  const c=normalize({diameter:1,height:Infinity,passes:99,shape:100,bead:12,repeats:4.4,motif:'invalid'})
   expect(c.height).toBe(defaults.height);expect(c.diameter).toBe(40);expect(c.motif).toBe(defaults.motif);expect(c.repeats).toBe(4)
   expect(c.diameter/2-c.shape-c.bead*(c.passes-1)*.85).toBeGreaterThanOrEqual(5)
  })
- it('exports retract before every disconnected transition, with no extrusion on travel',()=>{
-  const c={...defaults,height:20,layer:2};const study=generate(c),gcode=exportGcode(c,study)
-  const print=gcode.split('G92 E0').slice(2).join('G92 E0').split(';END_PRINT')[0]
-  expect((gcode.match(/Pressure relief before travel/g)||[]).length).toBe(study.paths.length-1)
-  for(const line of print.split('\n'))if(line.startsWith('G0 '))expect(line).not.toMatch(/ E/)
-  let e=0,retracts=0
-  for(const line of print.split('\n')){if(line==='G92 E0'){e=0;continue}const match=line.match(/ E(-?[\d.]+)/);if(!match)continue;const next=Number(match[1]);if(line.includes('Pressure relief')){expect(e-next).toBeCloseTo(c.retraction,3);retracts++}else if(line.startsWith('G1'))expect(next).toBeGreaterThanOrEqual(e);e=next}
-  expect(retracts).toBe(study.paths.length-1)
+ it('moves while retracting before each disconnected travel, with exact E withdrawal',()=>{
+  const c={...defaults,height:20,layer:2},study=generate(c),plan=planExtrusion(c,study)
+  for(const p of plan){
+   expect(p.stationaryRetraction).toBe(0)
+   expect(p.moves.filter(m=>m.phase==='retract').reduce((sum,m)=>sum+m.deltaE,0)).toBeCloseTo(-c.retraction,7)
+   expect(p.moves.some(m=>m.phase==='coast')).toBe(true)
+  }
+  const body=exportGcode(c,study).split(';BEGIN_PRINT')[1].split(';END_PRINT')[0]
+  expect(body).not.toMatch(/G1 E/)
+  for(const line of body.split('\n'))if(line.startsWith('G0 '))expect(line).not.toMatch(/ E/)
  })
  it('rejects a path outside the build envelope or with invalid coordinates',()=>{
   const study=generate({...defaults,height:20})
   expect(()=>exportGcode(defaults,{...study,maxRadius:300})).toThrow('envelope')
   study.paths[0].points[0].x=NaN
   expect(()=>exportGcode(defaults,study)).toThrow('coordinates')
+ })
+})
+
+describe('seam control and nozzle calibration',()=>{
+ it('allows a 250 mm nominal diameter and exports within the Super 10 envelope',()=>{
+  const c=normalize({diameter:999,height:20,profile:'barrel',shape:25,projection:15,bead:12})
+  expect(c.diameter).toBe(250)
+  expect(()=>exportGcode(c,generate(c))).not.toThrow()
+ })
+ it('defaults to a 3 mm nozzle and scales E with its matching bead width',()=>{
+  const small=normalize({nozzle:3,passes:1,treatment:'relief',seamMode:'stepped',height:20,projection:0,coast:0,retractLead:0,retraction:0})
+  const large=normalize({...small,nozzle:6,bead:undefined})
+  expect(defaults.nozzle).toBe(3);expect(small.bead).toBe(3);expect(large.bead).toBe(6)
+  const sum=(c:Config)=>planExtrusion(c,generate(c)).flatMap(p=>p.moves).reduce((s,m)=>s+m.deltaE,0)
+  expect(sum(large)/sum(small)).toBeCloseTo(2,8)
+  expect(exportGcode(small,generate(small))).toContain('Nozzle 3 mm; bead width 3 mm')
+  expect(normalize({bead:4.6}).bead).toBe(4.6)
+ })
+ it('keeps all relief motifs continuous across spiral turns on each profile',()=>{
+  for(const {id} of motifs)for(const profile of ['cylinder','barrel','taper'] as const){
+   const c=normalize({motif:id,profile,treatment:'relief',passes:1,height:21,layer:2,margin:0,phase:27,twist:45})
+   const study=generate(c);expect(usesSpiral(c)).toBe(true)
+   let z=0,maxZ=0,maxGap=0
+   for(let i=0;i<study.paths.length;i++){
+    const p=study.paths[i]
+    if(i){const prev=study.paths[i-1].points.at(-1)!;maxGap=Math.max(maxGap,Math.hypot(prev.x-p.points[0].x,prev.y-p.points[0].y,prev.z-p.points[0].z));expect(p.continuous).toBe(true)}
+    for(const point of p.points){if(point.z<z-1e-8)throw Error('Z moved downward');z=point.z;maxZ=Math.max(maxZ,z)}
+   }
+   expect(maxGap).toBeLessThan(1e-8);expect(maxZ).toBe(21)
+   expect(study.paths[0].startLayerHeight).toBe(2);expect(study.paths[1].startLayerHeight).toBe(0)
+   expect(study.paths.at(-1)?.layerHeight).toBe(1)
+  }
+ })
+ it('removes 57 layer restarts from the uploaded single-wall chevron configuration',()=>{
+  const c=normalize({diameter:80,height:81,bead:4.6,layer:1.4,motif:'chevron',treatment:'relief',passes:1,projection:3})
+  const study=generate(c),plan=planExtrusion(c,study),body=exportGcode(c,study).split(';BEGIN_PRINT')[1].split(';END_PRINT')[0]
+  expect(study.layers).toBe(58)
+  expect(plan.filter(p=>!p.connected)).toHaveLength(1)
+  expect(plan.slice(0,-1).flatMap(p=>p.moves).every(m=>m.phase==='print'&&m.deltaE>=0)).toBe(true)
+  expect(plan.flatMap(p=>p.moves).some(m=>m.phase==='recovery')).toBe(false)
+  expect((body.match(/G0 /g)||[])).toHaveLength(1)
+  expect(body.includes('G92')).toBe(false);expect(/G1 E/.test(body)).toBe(false)
+  expect(study.paths.at(-1)?.points.at(-1)?.z).toBe(81)
+  const exact80=generate({...c,height:80});expect(exact80.paths.at(-1)?.points.at(-1)?.z).toBe(80)
+ })
+ it('preserves separate layers for multiple walls, beads, loops and explicit stepped mode',()=>{
+  for(const c of [normalize({passes:2,treatment:'relief'}),normalize({passes:1,treatment:'beads'}),normalize({passes:1,treatment:'loops'}),normalize({passes:1,treatment:'relief',seamMode:'stepped'})]){
+   expect(usesSpiral(c)).toBe(false);expect(generate({...c,height:20}).paths.every(p=>!p.continuous)).toBe(true)
+  }
+ })
+ it('supports turning off early retraction and reducing restart recovery independently',()=>{
+  const c=normalize({height:20,layer:2,retractLead:0,coast:0,restart:50})
+  const plan=planExtrusion(c,generate(c))
+  expect(plan.every(p=>p.stationaryRetraction===8)).toBe(true)
+  const noRecovery=planExtrusion({...c,restart:0},generate(c))
+  const total=(p:typeof plan[number])=>p.moves.reduce((s,m)=>s+m.deltaE,0)
+  expect(total(plan[1])-total(noRecovery[1])).toBeCloseTo(4,8)
+  expect(total(plan[0])-total(noRecovery[0])).toBe(0)
+ })
+ it('scales the last stepped layer extrusion to its actual height',()=>{
+  const c=normalize({height:21,layer:2,passes:1,treatment:'relief',projection:0,seamMode:'stepped',coast:0,retractLead:0,retraction:0})
+  const plan=planExtrusion(c,generate(c)),total=(p:typeof plan[number])=>p.moves.reduce((s,m)=>s+m.deltaE,0)
+  expect(total(plan.at(-1)!)/total(plan[0])).toBeCloseTo(.5,8)
  })
 })
