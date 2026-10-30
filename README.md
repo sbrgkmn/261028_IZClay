@@ -47,3 +47,5 @@ The source repository contained a Mac-specific tracked `node_modules` symlink. L
 
 
 Print controls restore relief, radial beads and outward loops, nozzle and bead diameter, layer height, speed, texture spacing/cadence, wall count (1–3), flow and pressure/restart settings. Auto strategy spirals with one wall; multiple walls or explicit stepped strategy use separate paths. Beads and loops reach both ends; only explicit plain-collar mode adds plain bands. End turns carry texture regardless of cadence, and the leveling turn retains the final texture outline. These options persist in saved designs and feed preview, playback and G-code.
+
+The workflow is Compose / Type / Print. Type contains deposition treatment, depth/offset, texture spacing and cadence. Column generation and imported designs enforce a single continuous spiral wall for every treatment; stepped paths and multiple walls are not offered. Final pressure relief applies only at the end of the connected segment path. The former Connect panel is no longer exposed.

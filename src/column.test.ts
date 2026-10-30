@@ -59,13 +59,13 @@ it('preserves U/V repetition through save and height changes',()=>{
  expect(columnField(p,.31,85)).toBeCloseTo(columnField(taller,.31,170),8);
 });
 
-it('retains treatment and wall controls through column import and generation',()=>{
+it('retains treatment and migrates all wall settings to continuous spiral',()=>{
  for(const treatment of ['relief','beads','loops'] as const)for(const passes of [1,2,3]){
   const p=readColumn({...short,app:'iz-column-lab',config:{...short.config,treatment,passes}});
-  expect(segmentConfig(p,0).treatment).toBe(treatment);expect(segmentConfig(p,0).passes).toBe(passes);
+  expect(segmentConfig(p,0).treatment).toBe(treatment);expect(segmentConfig(p,0).passes).toBe(1);
   const study=segmentStudy(p,0);
-  expect(study.paths.length).toBe(passes===1?13:12*passes);
-  if(passes>1)expect(study.paths.every(path=>!path.continuous)).toBe(true);
+  expect(study.paths.length).toBe(13);
+  expect(study.paths.slice(1).every(path=>path.continuous)).toBe(true);
   for(const point of study.paths.at(-1)!.points)expect(Math.hypot(point.x,point.y)).toBeCloseTo(p.config.diameter/2,8);
  }
 });
@@ -76,5 +76,15 @@ it('extends beads and loops to both ends without an implicit collar',()=>{
  const study=segmentStudy(p,0),r=p.config.diameter/2;
  for(const path of [study.paths[0],study.paths.at(-2)!,study.paths.at(-1)!])expect(Math.max(...path.points.map(q=>Math.hypot(q.x,q.y)))).toBeGreaterThan(r+.1);
  expect(study.paths.at(-1)!.points.map(q=>[q.x,q.y])).toEqual(study.paths.at(-2)!.points.map(q=>[q.x,q.y]));
+ }
+});
+
+it('exports one uninterrupted chain for every deposition treatment even from stepped settings',()=>{
+ for(const treatment of ['relief','beads','loops'] as const){
+ const p:Column={...short,config:{...short.config,treatment,passes:3,seamMode:'stepped'}};
+ const study=segmentStudy(p,0),plan=planExtrusion(segmentConfig(p,0),study);
+ for(let i=1;i<study.paths.length;i++)expect(study.paths[i].points[0]).toEqual(study.paths[i-1].points.at(-1));
+
+ expect(segmentGcode(p,0)).toContain('continuous');
  }
 });

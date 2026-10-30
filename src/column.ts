@@ -18,7 +18,7 @@ export const totalHeight=(p:Column)=>p.segments.reduce((h,s)=>h+s.height,0)
 export const offsetAt=(p:Column,i:number)=>p.segments.slice(0,i).reduce((h,s)=>h+s.height,0)
 export const verticalRepeats=(p:Column)=>p.vRepeats??totalHeight(p)/p.config.pitch
 export const patternPitch=(p:Column)=>totalHeight(p)/verticalRepeats(p)
-export function segmentConfig(p:Column,i:number):Config {return {...p.config,pitch:patternPitch(p),motif:p.segments[i].motif,height:p.segments[i].height,profile:'cylinder',shape:0,twist:0,margin:0,levelTop:true}}
+export function segmentConfig(p:Column,i:number):Config {return {...p.config,pitch:patternPitch(p),motif:p.segments[i].motif,height:p.segments[i].height,profile:'cylinder',shape:0,twist:0,margin:0,levelTop:true,seamMode:'auto',passes:1}}
 // A common world-height field keeps row phase intact across separately printed pieces.
 export function columnField(p:Column,a:number,z:number):number {
  let index=0,start=0
@@ -54,8 +54,8 @@ export function segmentIssues(p:Column,i:number):string[]{const s=p.segments[i],
 }
 export function segmentGcode(p:Column,i:number){const issues=segmentIssues(p,i);if(issues.length)throw Error(issues.join(' '));return `; Column: ${p.name.replace(/[\r\n]/g,' ')}\n; Segment ${i+1} of ${p.segments.length}; assembly bottom Z ${offsetAt(p,i)} mm\n; Assemble bottom to top; nominal dimensions before firing.\n`+exportGcode(segmentConfig(p,i),segmentStudy(p,i))}
 export function readColumn(raw:any):Column {
- if(raw?.app==='iz-pattern-lab'){const c=normalize(raw.config);return {...initialColumn,name:String(raw.title||'Imported study'),config:{...c,profile:'cylinder',twist:0},segments:[{id:crypto.randomUUID(),motif:c.motif==='blend'?'meander':c.motif==='chevron'?'leafchevron':c.motif,height:Math.round(c.height/c.layer)*c.layer,rotation:c.phase}]}}
+ if(raw?.app==='iz-pattern-lab'){const c=normalize(raw.config);return {...initialColumn,name:String(raw.title||'Imported study'),config:{...c,seamMode:'auto',passes:1,profile:'cylinder',twist:0},segments:[{id:crypto.randomUUID(),motif:c.motif==='blend'?'meander':c.motif==='chevron'?'leafchevron':c.motif,height:Math.round(c.height/c.layer)*c.layer,rotation:c.phase}]}}
  if(raw?.app!=='iz-column-lab'||!Array.isArray(raw.segments)||raw.segments.length<1||raw.segments.length>12)throw Error('Choose a column JSON or a legacy IZ study.')
  const n=(v:unknown,lo:number,hi:number,f:number)=>typeof v==='number'&&Number.isFinite(v)?Math.max(lo,Math.min(hi,v)):f
- return {vRepeats:typeof raw.vRepeats==='number'&&Number.isFinite(raw.vRepeats)?n(raw.vRepeats,1,200,13):undefined,name:String(raw.name||'Untitled column').slice(0,100),config:{...normalize(raw.config),profile:'cylinder',twist:0},maxHeight:n(raw.maxHeight,20,350,300),transition:n(raw.transition,0,40,18),rim:n(raw.rim,0,12,3),finish:raw.finish==='collar'?'collar':'continuous',joint:{bore:n(raw.joint?.bore,0,250,0),outside:n(raw.joint?.outside,0,280,0),clearance:n(raw.joint?.clearance,.3,2,.8)},segments:raw.segments.map((s:any)=>({id:crypto.randomUUID(),motif:normalize(s).motif==='blend'?'meander':normalize(s).motif==='chevron'?'leafchevron':normalize(s).motif,height:n(s.height,20,350,120),rotation:n(s.rotation,0,360,0)}))}
+ return {vRepeats:typeof raw.vRepeats==='number'&&Number.isFinite(raw.vRepeats)?n(raw.vRepeats,1,200,13):undefined,name:String(raw.name||'Untitled column').slice(0,100),config:{...normalize(raw.config),seamMode:'auto',passes:1,profile:'cylinder',twist:0},maxHeight:n(raw.maxHeight,20,350,300),transition:n(raw.transition,0,40,18),rim:n(raw.rim,0,12,3),finish:raw.finish==='collar'?'collar':'continuous',joint:{bore:n(raw.joint?.bore,0,250,0),outside:n(raw.joint?.outside,0,280,0),clearance:n(raw.joint?.clearance,.3,2,.8)},segments:raw.segments.map((s:any)=>({id:crypto.randomUUID(),motif:normalize(s).motif==='blend'?'meander':normalize(s).motif==='chevron'?'leafchevron':normalize(s).motif,height:n(s.height,20,350,120),rotation:n(s.rotation,0,360,0)}))}
 }

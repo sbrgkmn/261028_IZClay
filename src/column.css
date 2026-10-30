@@ -7,3 +7,5 @@
 .preview-toolbar{flex-wrap:wrap}.representation{margin-left:auto}.reference-grid figcaption canvas{width:100%;height:80px;object-fit:fill;margin-top:12px}.pattern-library{gap:7px}.pattern-library span{font-size:9px;line-height:1.4}.pattern-library canvas{height:45px}@media(max-width:1100px){.representation{margin-left:0}.preview-toolbar{gap:9px}.representation button{padding:7px 10px}}
 
 .reference-strip>canvas{width:58px;height:90px;object-fit:cover}.connector-reference{height:280px;display:flex;flex-direction:column;justify-content:center;align-items:center;background:#e9e6dd}.connector-reference canvas{width:90%;height:150px}.connector-reference p{font-size:11px;color:#737b6c}
+
+.playback-speed{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px}.playback-speed select{padding:5px;border:1px solid #d5d0c7;border-radius:4px;background:#faf9f5;color:inherit}.part-playback{flex-wrap:wrap}.part-playback input[type=range]{min-width:100px}
