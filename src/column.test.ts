@@ -104,3 +104,26 @@ it('keeps bead peaks uniform and matching rims across unequal parts',()=>{
  const collar=segmentStudy({...p,finish:'collar'},1)
  for(const path of [collar.paths[0],collar.paths.at(-1)!])for(const q of path.points)expect(Math.hypot(q.x,q.y)).toBeCloseTo(75,9)
 })
+
+it('persists independent pattern thickness and migrates the previous shared width',()=>{
+ const p={...short,app:'iz-column-lab',config:{...short.config,ridge:4},segments:short.segments.map((s,i)=>({...s,...(i===1?{strokeWidth:7}:{})}))}
+ const restored=readColumn(JSON.parse(JSON.stringify(p)))
+ expect(restored.segments.map(s=>s.strokeWidth)).toEqual([4,7,4])
+ expect(segmentConfig(restored,1).ridge).toBe(7)
+ expect(readColumn({...p,segments:[{...p.segments[0],strokeWidth:0},{...p.segments[0],strokeWidth:99},{...p.segments[0],strokeWidth:'bad'}]}).segments.map(s=>s.strokeWidth)).toEqual([.5,12,4])
+})
+
+it('thicker motif bands select more full-depth beads without changing other segment interiors',()=>{
+ const p:Column={...initialColumn,config:{...initialColumn.config,treatment:'beads',projection:5,spacing:3,every:1},segments:initialColumn.segments.map(s=>({...s,motif:'arches',height:60,strokeWidth:1}))}
+ const thick:Column={...p,segments:p.segments.map((s,i)=>({...s,strokeWidth:i===1?8:1}))}
+ const narrowStudy=segmentStudy(p,1),wideStudy=segmentStudy(thick,1)
+ const peaks=(study:ReturnType<typeof segmentStudy>)=>study.paths.flatMap(path=>path.points.filter(q=>q.strength>1-1e-9))
+ expect(peaks(wideStudy).length).toBeGreaterThan(peaks(narrowStudy).length)
+ for(const q of peaks(wideStudy))expect(Math.hypot(q.x,q.y)-60).toBeCloseTo(5,9)
+ for(let a=0;a<6.2;a+=.1)expect(columnField(p,a,25)).toBe(columnField(thick,a,25))
+ for(let i=0;i<2;i++){
+  const top=segmentStudy(thick,i).paths.at(-1)!.points,bottom=segmentStudy(thick,i+1).paths[0].points
+  expect(top.map(q=>[q.x,q.y])).toEqual(bottom.map(q=>[q.x,q.y]))
+ }
+ expect(segmentGcode(thick,1)).toContain('Pattern line thickness 8 mm')
+})
