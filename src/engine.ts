@@ -38,13 +38,28 @@ export type Path={points:Point[];kind:'wall'|'texture';layer:number;continuous?:
 export type Study={paths:Path[];layers:number;length:number;excursions:number;maxStep:number;maxRadius:number;points:number;minutes:number}
 export const distance=(a:Point,b:Point)=>Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z)
 export const usesSpiral=(c:Config)=>c.seamMode==='auto'&&c.passes===1
+// Bead placement and depth are separate: the motif selects complete pulses,
+// while projection sets every selected peak. Sample each pulse at its center
+// so the motif edge cannot clip one side or attenuate its height.
+function beadGrid(c:Config,baseCount:number){
+ const sites=Math.max(1,Math.round(TAU*c.diameter/2/c.spacing))
+ const samplesPerSite=Math.max(16,2*Math.ceil(baseCount/sites/2))
+ return {sites,count:sites*samplesPerSite}
+}
+function beadStrength(sample:(a:number,z:number)=>number,sites:number,t:number,startZ:number,endZ:number,active:boolean){
+ if(!active||t<=0||t>=1)return 0
+ const site=Math.min(sites-1,Math.floor(t*sites)),center=(site+.5)/sites
+ if(sample(center*TAU,startZ+(endZ-startZ)*center)<=.35)return 0
+ return Math.max(0,Math.cos(TAU*(t*sites-site-.5)))**6
+}
+const textureTurn=(c:Config,l:number,layers:number)=>l%c.every===0||l===0||l===layers-1
 export function generate(c:Config, sample:(theta:number,z:number)=>number=(a,z)=>patternAt(c,a,z)):Study {
  if(usesSpiral(c))return generateSpiral(c,sample)
  const paths:Path[]=[], layers=Math.ceil(c.height/c.layer)
  let length=0,excursions=0,maxStep=0,maxRadius=0,totalPoints=0
- const sites=Math.max(c.repeats*6,Math.round(TAU*c.diameter/2/c.spacing))
- const samples=Math.max(240,Math.ceil(TAU*(c.diameter/2+Math.abs(c.shape)+c.projection)/.9),sites*8)
- const count=Math.min(1440,samples)
+ const loopSites=Math.max(c.repeats*6,Math.round(TAU*c.diameter/2/c.spacing))
+ const samples=Math.max(240,Math.ceil(TAU*(c.diameter/2+Math.abs(c.shape)+c.projection)/.9),loopSites*8)
+ const {sites,count}=c.treatment==='beads'?beadGrid(c,samples):{sites:loopSites,count:Math.min(1440,samples)}
  const point=(a:number,r:number,z:number,strength:number):Point=>({x:r*Math.cos(a),y:r*Math.sin(a),z,strength})
  for(let l=0;l<layers;l++){
   const z=Math.min(c.height,(l+1)*c.layer),r=radiusAt(c,z)
@@ -65,7 +80,7 @@ export function generate(c:Config, sample:(theta:number,z:number)=>number=(a,z)=
    } else {
     for(let j=0;j<=count;j++){
      const a=(j===count?0:j/count*TAU);const zz=usesSpiral(c)&&l>0?l*c.layer+(z-l*c.layer)*j/count:z;let strength=inner?0:sample(a,zz)
-     if(c.treatment==='beads'){const pulse=Math.max(0,Math.cos(a*sites+(Math.floor(l/c.every)%2)*Math.PI))**6;strength*=pulse*(l%c.every===0||l===0||l===layers-1?1:.1)}
+     if(c.treatment==='beads')strength=inner?0:beadStrength(sample,sites,j/count,z,z,textureTurn(c,l,layers))
      points.push(point(a,radiusAt(c,zz)-pass*c.bead*.85+c.projection*strength,zz,strength))
     }
    }
@@ -81,7 +96,9 @@ export function generate(c:Config, sample:(theta:number,z:number)=>number=(a,z)=
 function generateSpiral(c:Config,sample:(a:number,z:number)=>number):Study {
  const layers=Math.ceil(c.height/c.layer-1e-9),paths:Path[]=[]
  const sites=Math.max(c.repeats*6,Math.round(TAU*c.diameter/2/c.spacing))
- const count=Math.min(1440,Math.max(240,Math.ceil(TAU*(c.diameter/2+c.shape+c.projection)/.9),sites*8))
+ const baseCount=Math.max(240,Math.ceil(TAU*(c.diameter/2+c.shape+c.projection)/.9),sites*8)
+ const grid=c.treatment==='beads'?beadGrid(c,baseCount):{sites,count:Math.min(1440,baseCount)}
+ const count=grid.count
  let length=0,excursions=0,maxRadius=0,totalPoints=0
  const point=(a:number,r:number,z:number,strength:number):Point=>({x:r*Math.cos(a),y:r*Math.sin(a),z,strength})
  for(let l=0;l<layers;l++){
@@ -90,9 +107,7 @@ function generateSpiral(c:Config,sample:(a:number,z:number)=>number):Study {
    const a=j===count?0:j/count*TAU,z=startZ+(endZ-startZ)*j/count
    let strength=sample(a,z)
    if(c.treatment==='beads'){
-    // Phase and cadence vary continuously with height, including at 0° / 360°.
-    const turn=l===0||l===layers-1?0:(z/c.layer-1)/c.every
-    strength*=Math.max(0,Math.cos(a*sites+Math.PI*turn))**6*(.1+.9*(.5+.5*Math.cos(TAU*turn))**4)
+    strength=beadStrength(sample,grid.sites,j/count,startZ,endZ,textureTurn(c,l,layers))
    }
    const r=radiusAt(c,z)
    points.push(point(a,r+(c.treatment==='loops'?0:c.projection*strength),z,c.treatment==='loops'?0:strength))

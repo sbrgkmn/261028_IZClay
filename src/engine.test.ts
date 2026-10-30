@@ -7,15 +7,13 @@ describe('periodic patterns',()=>{
  })
 })
 describe('fabrication paths',()=>{
- for(const treatment of ['relief','beads','loops'] as const)it(`${treatment} closes every path and preserves the inner wall`,()=>{
-  for(const {id} of motifs)for(const profile of ['cylinder','barrel','taper'] as const){
+ for(const treatment of ['relief','beads','loops'] as const)for(const {id} of motifs)for(const profile of ['cylinder','barrel','taper'] as const)it(`${treatment} / ${id} / ${profile} closes every path and preserves the inner wall`,()=>{
    const c=normalize({...defaults,passes:2,seamMode:'stepped',treatment,motif:id,profile,height:20,margin:0,pitch:8,layer:2})
    const study=generate(c)
    expect(study.layers).toBe(10)
    expect(study.paths.length).toBe(20)
    for(const path of study.paths){expect(path.points[0]).toEqual(path.points.at(-1));for(const p of path.points){expect([p.x,p.y,p.z,p.strength].every(Number.isFinite)).toBe(true);const r=Math.hypot(p.x,p.y);if(path.kind==='wall')expect(r).toBeCloseTo(radiusAt(c,p.z)-c.bead*.85,8);else expect(r).toBeGreaterThanOrEqual(radiusAt(c,p.z)-1e-8)}}
    expect(study.maxRadius).toBeGreaterThan(c.diameter/2)
-  }
  })
  it('zero projection returns a plain circular coupon',()=>{
   const c={...defaults,projection:0,height:20};const study=generate(c)
@@ -130,5 +128,42 @@ describe('vase mode for every texture',()=>{
  it('starts new studies in spiral and marks old multi-wall studies as stepped',()=>{
   expect(usesSpiral(defaults)).toBe(true)
   expect(normalize({passes:2,seamMode:'auto'}).seamMode).toBe('stepped')
+ })
+})
+
+describe('uniform bead parameters',()=>{
+ for(const seamMode of ['auto','stepped'] as const)it(`${seamMode}: every active peak has the requested depth and cadence skips whole turns`,()=>{
+  for(const every of [1,2,6])for(const projection of [0,1,5,15]){
+   const c={...defaults,seamMode,diameter:150,height:24,layer:1.5,spacing:3,every,projection,margin:0}
+   // A partially weighted motif used to attenuate depth a second time.
+   const study=generate(c,()=>.6),sites=Math.round(Math.PI*c.diameter/c.spacing)
+   for(const path of study.paths){
+    const active=path.layer%every===0||path.layer===0||path.layer===study.layers-1
+    const peaks=path.points.filter(p=>p.strength>1-1e-9)
+    expect(peaks).toHaveLength(active?sites:0)
+    for(const p of peaks)expect(Math.hypot(p.x,p.y)-radiusAt(c,p.z)).toBeCloseTo(projection,9)
+    if(!active)expect(path.points.every(p=>p.strength===0)).toBe(true)
+    expect(path.points[0].strength).toBe(0);expect(path.points.at(-1)!.strength).toBe(0)
+   }
+  }
+ })
+ it('spacing is independent of motif repeats and preserves full peaks above the old sample cap',()=>{
+  for(const repeats of [3,24]){
+   const c={...defaults,diameter:250,height:6,layer:1.5,spacing:3,repeats,projection:5,every:1}
+   const study=generate(c,()=>1)
+   expect(study.paths[0].points.filter(p=>p.strength>1-1e-9)).toHaveLength(Math.round(Math.PI*250/3))
+   const code=exportGcode(c,study),positions=[...code.split(';BEGIN_PRINT')[1].split(';END_PRINT')[0].matchAll(/G1 X([\d.-]+) Y([\d.-]+)/g)]
+   const maxRadius=Math.max(...positions.map(m=>Math.hypot(Number(m[1])-207.5,Number(m[2])-202.5)))
+   expect(maxRadius).toBeCloseTo(130,2)
+  }
+ })
+ it('selects complete beads at motif boundaries instead of clipping their peaks',()=>{
+  const c={...defaults,height:6,layer:1.5,every:1,projection:5}
+  const study=generate(c,(a)=>a<Math.PI?.6:0)
+  for(const path of study.paths){
+   const peaks=path.points.filter(p=>p.strength>1-1e-9)
+   expect(peaks.length).toBeGreaterThan(0)
+   for(const p of peaks)expect(Math.hypot(p.x,p.y)).toBeCloseTo(55,9)
+  }
  })
 })

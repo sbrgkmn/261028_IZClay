@@ -88,3 +88,19 @@ it('exports one uninterrupted chain for every deposition treatment even from ste
  expect(segmentGcode(p,0)).toContain('continuous');
  }
 });
+
+it('keeps bead peaks uniform and matching rims across unequal parts',()=>{
+ const p:Column={...initialColumn,config:{...initialColumn.config,treatment:'beads',diameter:150,projection:5,spacing:3,every:2},segments:[{id:'a',motif:'meander',height:120,rotation:0},{id:'b',motif:'arches',height:99,rotation:0},{id:'c',motif:'arches',height:120,rotation:0}]}
+ const studies=p.segments.map((_,i)=>segmentStudy(p,i))
+ for(const study of studies){
+  const peaks=study.paths.flatMap(path=>path.points.filter(q=>q.strength>1-1e-9))
+  expect(peaks.length).toBeGreaterThan(0)
+  for(const q of peaks)expect(Math.hypot(q.x,q.y)-75).toBeCloseTo(5,9)
+ }
+ for(let i=0;i<2;i++){
+  const top=studies[i].paths.at(-1)!.points,bottom=studies[i+1].paths[0].points
+  expect(top.map(q=>[q.x,q.y])).toEqual(bottom.map(q=>[q.x,q.y]))
+ }
+ const collar=segmentStudy({...p,finish:'collar'},1)
+ for(const path of [collar.paths[0],collar.paths.at(-1)!])for(const q of path.points)expect(Math.hypot(q.x,q.y)).toBeCloseTo(75,9)
+})
