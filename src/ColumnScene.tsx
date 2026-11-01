@@ -7,7 +7,7 @@ function Piece({p,index,selected,gap,mode,fraction,onSelect}:{p:Column;index:num
  const s=p.segments[index],c=useMemo(()=>segmentConfig(p,index),[p,index]),study=useMemo(()=>segmentStudy(p,index),[p,index])
  const visible=totalHeight(p)*fraction-offsetAt(p,index),layer=study.paths.findLast(path=>path.points.at(-1)!.z<=visible+1e-6)?.layer??-1
  return <group position={[0,offsetAt(p,index)+index*gap,0]} onClick={e=>{e.stopPropagation();onSelect(index)}}>
- {layer>=0&&<Geometry study={study} c={c} mode={mode} layer={layer} only={false} tint={selected===index?'#bd906e':'#cfb89c'}/>}
+ {layer>=0&&<Geometry column={p} partIndex={index} study={study} c={c} mode={mode} layer={layer} only={false} tint={selected===index?'#bd906e':'#cfb89c'}/>}
  <Html position={[p.config.diameter/2+p.config.projection+28,s.height/2,0]} center><button className={'part-marker '+(selected===index?'selected':'')} onClick={()=>onSelect(index)}>{String(index+1).padStart(2,'0')}</button></Html></group>
 }
 export function ColumnScene({p,selected,exploded,reset,onSelect,mode,fraction}:{p:Column;selected:number;exploded:boolean;reset:number;onSelect:(i:number)=>void;mode:string;fraction:number}){
