@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {initialColumn,columnField,segmentField,segmentStudy,segmentGcode,segmentIssues,offsetAt,readColumn,type Column} from './column'
+import {initialColumn,addTerminals,totalHeight,columnField,segmentField,segmentStudy,segmentGcode,segmentIssues,offsetAt,readColumn,type Column} from './column'
 import {zip} from './files'
 import {planExtrusion} from './engine'
 import {segmentConfig} from './column'
@@ -34,7 +34,7 @@ describe('independently printed column',()=>{
   expect(Math.min(...z)).toBe(2);expect(Math.max(...z)).toBeLessThanOrEqual(25);expect(code).toContain('assembly bottom Z 48 mm');expect(body.match(/G0 /g)).toHaveLength(1);expect(body).not.toContain('G92');expect(body).toContain('Continuous rise')
  })
  it('blocks oversized and fractional-layer prints',()=>{
-  const p={...short,segments:[{...short.segments[0],height:302}]};expect(segmentIssues(p,0).join()).toContain('300 mm');expect(()=>segmentGcode(p,0)).toThrow()
+  const p={...short,segments:[{...short.segments[0],height:352}]};expect(segmentIssues(p,0).join()).toContain('500 mm');expect(()=>segmentGcode(p,0)).toThrow()
   expect(segmentIssues({...short,segments:[{...short.segments[0],height:23}]},0).join()).toContain('whole number')
  })
  it('preserves composition on file round trip and imports older studies',()=>{
@@ -127,3 +127,23 @@ it('thicker motif bands select more full-depth beads without changing other segm
  }
  expect(segmentGcode(thick,1)).toContain('Pattern line thickness 8 mm')
 })
+
+ it('preserves tall designs and checks each piece independently against its machine',()=>{
+ const p=readColumn({...initialColumn,app:'iz-column-lab',segments:initialColumn.segments.map(s=>({...s,height:600,layer:2,pitch:45,repeats:12}))});
+ expect(totalHeight(p)).toBe(1800);expect(segmentConfig(p,2).height).toBe(600);expect(segmentConfig(p,2).pitch).toBe(45);
+ expect(segmentIssues(p,2).join()).toContain('500 mm');
+ expect(segmentIssues({...p,printerId:'potterbot-10-xl'},2)).toEqual([]);
+ expect(readColumn({...p,app:'iz-column-lab'}).segments[2].height).toBe(600);
+ const study=segmentStudy(p,2);expect(study.paths.at(-1)!.points[0].z).toBe(600);
+ });
+ it('creates plain printable terminal spirals with preserved settings',()=>{
+ const p=addTerminals(initialColumn);expect(addTerminals(p).segments.length).toBe(5);
+ for(const i of [0,4]){const c=segmentConfig(p,i),study=segmentStudy(p,i);expect(segmentIssues(p,i)).toEqual([]);expect(c.projection).toBe(0);
+ expect(study.paths.at(-1)!.points[0].z).toBe(60);for(let j=1;j<study.paths.length;j++)expect(study.paths[j].points[0]).toEqual(study.paths[j-1].points.at(-1));
+ expect(segmentGcode(p,i)).toContain(';BEGIN_PRINT');
+ const first=Math.hypot(study.paths[0].points[0].x,study.paths[0].points[0].y),last=Math.hypot(study.paths.at(-1)!.points[0].x,study.paths.at(-1)!.points[0].y);
+ expect(i===0?first:last).toBe(72);expect(i===0?last:first).toBe(60);
+ }
+ expect(readColumn({...p,app:'iz-column-lab'}).segments[4].kind).toBe('capital');
+ expect(segmentIssues({...p,segments:p.segments.map(s=>({...s,flare:100}))},4).join()).toContain('too quickly');
+ });

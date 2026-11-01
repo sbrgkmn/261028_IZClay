@@ -1,7 +1,7 @@
 import {motifDistance as drawnDistance} from './patterns'
 import { PRINTER_PROFILES } from './clayflow/profiles'
 export type Motif = 'arches' | 'rosettes' | 'meander' | 'chevron' | 'weave' | 'floralmeander' | 'cells' | 'leafchevron' | 'vertical' | 'blend'
-export type Config = { motif: Motif; levelTop?:boolean; treatment: 'relief' | 'beads' | 'loops'; profile: 'cylinder' | 'barrel' | 'taper'; seamMode:'auto'|'stepped'; coast:number; retractLead:number; restart:number; recoveryDistance:number; nozzle:number; diameter:number; height:number; shape:number; repeats:number; pitch:number; ridge:number; projection:number; phase:number; twist:number; margin:number; spacing:number; every:number; layer:number; bead:number; passes:number; speed:number; flow:number; textureFlow:number; retraction:number; lift:number }
+export type Config = { motif: Motif; levelTop?:boolean; terminal?:'base'|'capital'; flare?:number; treatment: 'relief' | 'beads' | 'loops'; profile: 'cylinder' | 'barrel' | 'taper'; seamMode:'auto'|'stepped'; coast:number; retractLead:number; restart:number; recoveryDistance:number; nozzle:number; diameter:number; height:number; shape:number; repeats:number; pitch:number; ridge:number; projection:number; phase:number; twist:number; margin:number; spacing:number; every:number; layer:number; bead:number; passes:number; speed:number; flow:number; textureFlow:number; retraction:number; lift:number }
 export const defaults: Config = { motif:'arches', treatment:'beads', profile:'cylinder', nozzle:3,diameter:100,height:140,shape:12,repeats:8,pitch:24,ridge:2.4,projection:3.5,phase:0,twist:0,margin:8,spacing:5,every:2,layer:1.4,bead:3,passes:1,speed:22,flow:100,textureFlow:115,retraction:8,lift:1,seamMode:'auto',coast:2,retractLead:1,restart:100,recoveryDistance:24 }
 export const motifs: Array<{id:Motif;title:string;note:string;ref:string}> = [
  {id:'arches',title:'Scalloped arches',note:'Overlapping vaults · concept study',ref:'concept-relief.jpg'},
@@ -20,7 +20,7 @@ const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v))
 const fract=(v:number)=>v-Math.floor(v)
 const smooth=(v:number)=>{const t=clamp(v,0,1); return t*t*(3-2*t)}
 const segment=(x:number,y:number,a:number,b:number,c:number,d:number)=>{const dx=c-a,dy=d-b; const t=clamp(((x-a)*dx+(y-b)*dy)/(dx*dx+dy*dy||1),0,1); return Math.hypot(x-a-dx*t,y-b-dy*t)}
-export function radiusAt(c:Config,z:number){const t=clamp(z/c.height,0,1);return c.diameter/2+(c.profile==='barrel'?Math.sin(Math.PI*t)*c.shape:c.profile==='taper'?c.shape*(2*t-1):0)}
+export function radiusAt(c:Config,z:number){const t=clamp(z/c.height,0,1);if(c.terminal){const q=c.terminal==='base'?1-t:t;return c.diameter/2+(c.flare??12)*smooth(clamp((q-.15)/.7,0,1))}return c.diameter/2+(c.profile==='barrel'?Math.sin(Math.PI*t)*c.shape:c.profile==='taper'?c.shape*(2*t-1):0)}
 function motifDistance(m:Motif,u:number,v:number){return drawnDistance(m==='chevron'?'leafchevron':m==='blend'?'meander':m,u,v)}
 export function patternAt(c:Config,theta:number,z:number):number {
  const edge=smooth((z-c.margin)/Math.max(c.layer*2,2))*smooth((c.height-c.margin-z)/Math.max(c.layer*2,2))
@@ -206,9 +206,9 @@ export function planExtrusion(c:Config,study:Study):PlannedPath[]{
  }
  return result
 }
-export function exportGcode(c:Config,study:Study){
- const printer=PRINTER_PROFILES[0],ox=printer.buildVolume.x/2,oy=printer.buildVolume.y/2
- if(c.height+150>printer.buildVolume.z||study.maxRadius+c.bead/2>Math.min(ox,oy))throw Error('The form or end lift exceeds the Super 10 envelope.')
+export function exportGcode(c:Config,study:Study,printer=PRINTER_PROFILES[0]){
+ const ox=printer.buildVolume.x/2,oy=printer.buildVolume.y/2
+ if(c.height+(printer.id==='potterbot-super-10'?150:0)>printer.buildVolume.z||study.maxRadius+c.bead/2>Math.min(ox,oy))throw Error('The form or end lift exceeds the selected machine envelope.')
  const all=study.paths.flatMap(p=>p.points)
  if(!all.length||all.some(p=>![p.x,p.y,p.z,p.strength].every(Number.isFinite)))throw Error('Invalid toolpath coordinates.')
  const lines=['; IZ / BIENNALE PATTERN STUDY — EXPERIMENTAL',`; Motif: ${c.motif}; treatment: ${c.treatment}`,`; Nozzle ${c.nozzle} mm; bead width ${c.bead} mm; wall flow ${c.flow}%`,`; Diameter ${c.diameter} mm; height ${c.height} mm; layer ${c.layer} mm; wall passes ${c.passes}`,`; Path mode: ${usesSpiral(c)?'continuous spiral':'stepped layers'}`,`; Coast ${c.coast} mm; early retract ${c.retractLead} mm; retract ${c.retraction} E; restart ${c.restart}% over ${c.recoveryDistance} mm`,`; Projection ${c.projection} mm; patterned flow ${c.textureFlow}%`,'; Intentional outward excursions are NOT certified self-supporting.','; Open-bottom coupon. Preview is nominal bead geometry, not sag or pressure simulation.',...printer.startScript,'G90','M82','G92 E0',';BEGIN_PRINT']
