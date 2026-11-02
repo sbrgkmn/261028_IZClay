@@ -1,6 +1,6 @@
 import {motifDistance as drawnDistance} from './patterns'
 import { PRINTER_PROFILES } from './clayflow/profiles'
-export type Motif = 'arches' | 'rosettes' | 'meander' | 'chevron' | 'weave' | 'floralmeander' | 'cells' | 'leafchevron' | 'vertical' | 'blend'
+export type Motif = 'arches' | 'rosettes' | 'meander' | 'chevron' | 'weave' | 'floralmeander' | 'cells' | 'leafchevron' | 'vertical' | 'blend' | 'pluses' | 'spiral'
 export type ProfileBand={position:number;width:number;depth:number;shape:'rounded'|'flat'}
 export type Config = { motif: Motif; levelTop?:boolean; terminal?:'base'|'capital'; flare?:number; terminalProfile?:'smooth'|'rounded'|'stepped'; bands?:ProfileBand[]; treatment: 'relief' | 'beads' | 'loops'; profile: 'cylinder' | 'barrel' | 'taper'; seamMode:'auto'|'stepped'; coast:number; retractLead:number; restart:number; recoveryDistance:number; nozzle:number; diameter:number; height:number; shape:number; repeats:number; pitch:number; ridge:number; projection:number; phase:number; twist:number; margin:number; spacing:number; every:number; layer:number; bead:number; passes:number; speed:number; flow:number; textureFlow:number; retraction:number; lift:number }
 export const defaults: Config = { motif:'arches', treatment:'beads', profile:'cylinder', nozzle:3,diameter:100,height:140,shape:12,repeats:8,pitch:24,ridge:2.4,projection:3.5,phase:0,twist:0,margin:8,spacing:5,every:2,layer:1.4,bead:3,passes:1,speed:22,flow:100,textureFlow:115,retraction:8,lift:1,seamMode:'auto',coast:2,retractLead:1,restart:100,recoveryDistance:24 }
@@ -14,6 +14,8 @@ export const motifs: Array<{id:Motif;title:string;note:string;ref:string}> = [
  {id:'cells',title:'Linked cells',note:'Alternating rounded polygon frames',ref:'column-cells.jpg'},
  {id:'leafchevron',title:'Leaf and diagonal',note:'Diagonal stems with leaf accents',ref:'column-leaf.jpg'},
  {id:'vertical',title:'Vertical connector ribs',note:'Straight bottom-to-top ribs',ref:''},
+ {id:'pluses',title:'Intersecting pluses',note:'Offset plus voids',ref:'pluses.svg'},
+ {id:'spiral',title:'Spiral',note:'Parallel diagonal grooves',ref:'spiral.svg'},
  {id:'blend',title:'Layered collection',note:'Meander → floral → arches',ref:'concept-beads.jpg'},
 ]
 const TAU=Math.PI*2
@@ -28,7 +30,16 @@ export function patternAt(c:Config,theta:number,z:number):number {
  const u=(theta/TAU+c.phase/360+c.twist/360*z/c.height)*c.repeats, v=z/c.pitch
  const cellWidth=TAU*c.diameter/2/c.repeats
  const width=c.ridge/Math.min(cellWidth,c.pitch)
- const value=(m:Motif)=>1-smooth((motifDistance(m,u,v)-width*.35)/Math.max(.005,width*.65))
+ const value=(m:Motif)=>{
+  if(m==='spiral'){
+   const phase=u+v-Math.round(u+v)
+   return smooth((Math.abs(phase)-.05)/.035+.8*(width-.1))
+  }
+  if(m==='arches'||m==='meander'||m==='pluses'){
+   return smooth(.5-motifDistance(m,u,v)/.035+2*(width-.1))
+  }
+  return 1-smooth((motifDistance(m,u,v)-width*.35)/Math.max(.005,width*.65))
+ }
  let mask:number
  if(c.motif==='blend') {const h=z/c.height;const blend1=smooth((h-.28)/.12),blend2=smooth((h-.62)/.12);mask=(value('meander')*(1-blend1)+value('rosettes')*blend1)*(1-blend2)+value('arches')*blend2}
  else mask=value(c.motif)

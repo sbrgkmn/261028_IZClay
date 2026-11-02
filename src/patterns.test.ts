@@ -3,7 +3,7 @@ import {palette,initialColumn,columnField,segmentStudy,type Column} from './colu
 import {patternAt} from './engine'
 import {construction,motifDistance} from './patterns'
 describe('eight source abstractions',()=>{
- it('contains seven historic constructions and one connector',()=>{expect(palette).toHaveLength(8);expect(new Set(palette.map(m=>m.id)).size).toBe(8);expect(palette.filter(m=>m.source)).toHaveLength(7);expect(palette.at(-1)!.id).toBe('vertical')})
+ it('contains seven historic constructions and one connector',()=>{expect(palette).toHaveLength(10);expect(new Set(palette.map(m=>m.id)).size).toBe(10);expect(palette.filter(m=>m.source)).toHaveLength(9);expect(palette[7].id).toBe('vertical')})
  it('keeps vertical ribs invariant with height',()=>{for(let x=0;x<1;x+=.017)for(let y=0;y<4;y+=.19)expect(motifDistance('vertical',x,y)).toBeCloseTo(motifDistance('vertical',x,0),8)})
  it('uses a plus polygon with exactly one tile area in its periodic lattice',()=>{const edges=construction('weave').edges;const area=Math.abs(edges.reduce((a,[x,y,xx,yy])=>a+x*yy-xx*y,0))/2;expect(area).toBeCloseTo(1,9)})
  it('shares hexagon edges and square corners',()=>{for(const [x,y] of [[.25,0],[.75,0],[0,.25],[.25,.5],[0,.75]])expect(motifDistance('cells',x,y)).toBeLessThan(.004)})
@@ -12,7 +12,7 @@ describe('eight source abstractions',()=>{
   for(let z=0;z<120;z+=1.7)expect(patternAt(c,0,z)).toBeCloseTo(patternAt(c,2*Math.PI,z),7)
   for(let row=1;row<4;row++)for(let a=0;a<6.2;a+=.09)expect(Math.abs(patternAt(c,a,row*c.pitch-1e-6)-patternAt(c,a,row*c.pitch+1e-6))).toBeLessThan(.001)
  })
- it('matches printed rim XY coordinates for all 64 ordered pattern pairs',()=>{
+ it('matches printed rim XY coordinates for all 100 ordered pattern pairs',()=>{
   for(const a of palette)for(const b of palette){
    const p:Column={...initialColumn,config:{...initialColumn.config,layer:2,diameter:60,repeats:5},transition:0,segments:[{id:'a',motif:a.id,height:20,rotation:15},{id:'b',motif:b.id,height:20,rotation:65}]}
    const top=segmentStudy(p,0).paths.at(-1)!.points,bottom=segmentStudy(p,1).paths[0].points

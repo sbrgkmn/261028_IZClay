@@ -1,6 +1,7 @@
+import draftVoids from './draftVoids.json'
 // Periodic construction drawings, not image-derived textures.
 export type Edge = [number,number,number,number]
-export type PatternName = 'rosettes'|'floralmeander'|'cells'|'arches'|'leafchevron'|'weave'|'meander'|'vertical'
+export type PatternName = 'rosettes'|'floralmeander'|'cells'|'arches'|'leafchevron'|'weave'|'meander'|'vertical'|'pluses'|'spiral'
 export type Construction = {edges:Edge[];parts:{kind:string;count:number}[]}
 const line=(edges:Edge[],points:number[][],closed=false)=>{for(let i=1;i<points.length;i++)edges.push([points[i-1][0],points[i-1][1],points[i][0],points[i][1]]);if(closed)edges.push([points.at(-1)![0],points.at(-1)![1],points[0][0],points[0][1]])}
 const shift=(points:number[][],x:number,y:number)=>points.map(([a,b])=>[a+x,b+y])
@@ -34,10 +35,6 @@ export function construction(id:PatternName):Construction {
   for(const y of [0,.5])line(edges,[[0,y+.25],[.25,y],[.75,y],[1,y+.25],[.75,y+.5],[.25,y+.5]],true)
   parts.push({kind:'hexagon',count:2},{kind:'square between hexagons',count:2})
  }
- if(id==='arches'){
-  for(const [x,y] of [[.5,0],[0,.5],[1,.5]])line(edges,Array.from({length:25},(_,i)=>{const t=i/24*Math.PI;return[x+.5*Math.cos(t),y+.5*Math.sin(t)]}))
-  parts.push({kind:'touching semicircle rows',count:2})
- }
  if(id==='weave'){
   // Plus pentomino fundamental tile: lattice (2,1),(-1,2), determinant 5.
   // This rotation/scale produces a gap-free diagrid tessellation.
@@ -45,13 +42,11 @@ export function construction(id:PatternName):Construction {
   line(edges,plus.map(([x,y])=>[.5+(2*x+y)/5,.5+(-x+2*y)/5]),true)
   parts.push({kind:'tessellating plus outline',count:1})
  }
- if(id==='meander'){
-  for(let row=0;row<2;row++)for(let col=0;col<2;col++){
-   const x=.25+col*.5,y=.25+row*.5,rotate=(row+col)%2
-   for(const pts of [[[0,-.25],[0,.25]],[[-.25,-.25],[.25,-.25]],[[-.25,.25],[.25,.25]]])line(edges,pts.map(([a,b])=>[x+(rotate?b:a),y+(rotate?a:b)]))
-  }
-  parts.push({kind:'vertical I',count:2},{kind:'horizontal I',count:2})
+ if(id==='arches'||id==='meander'||id==='pluses'){
+  for(const polygon of draftVoids[id])line(edges,polygon,true)
+  parts.push({kind:'drafted void',count:draftVoids[id].length})
  }
+ if(id==='spiral')line(edges,[[0,1],[1,0]])
  return {edges,parts}
 }
 const cache=new Map<PatternName,Float32Array>(),N=192
@@ -61,7 +56,25 @@ function bake(id:PatternName){const result=new Float32Array(N*N),edges:Edge[]=[]
  }
  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const x=i/N,y=j/N;let best=1
   for(const [a,b,c,d] of edges){const vx=c-a,vy=d-b,t=Math.max(0,Math.min(1,((x-a)*vx+(y-b)*vy)/(vx*vx+vy*vy||1))),xx=x-a-vx*t,yy=y-b-vy*t;best=Math.min(best,xx*xx+yy*yy)}result[j*N+i]=Math.sqrt(best)
- }cache.set(id,result);return result
+ }
+ // Scan-convert the Illustrator void polygons on the periodic grid. Positive
+ // distance is inside a recess; negative distance is on the raised ground.
+ if(id==='arches'||id==='meander'||id==='pluses'){
+  const inside=new Uint8Array(N*N)
+  for(const polygon of draftVoids[id])for(const dy of [-1,0,1]){
+   for(let j=0;j<N;j++){
+    const y=j/N-dy,cuts:number[]=[]
+    for(let k=0;k<polygon.length;k++){
+     const [ax,ay]=polygon[k],[bx,by]=polygon[(k+1)%polygon.length]
+     if((ay>y)!==(by>y))cuts.push(ax+(y-ay)*(bx-ax)/(by-ay))
+    }
+    cuts.sort((a,b)=>a-b)
+    for(let k=0;k+1<cuts.length;k+=2)for(let x=Math.ceil(cuts[k]*N);x<cuts[k+1]*N;x++)inside[j*N+(x+N)%N]=1
+   }
+  }
+  for(let k=0;k<result.length;k++)if(!inside[k])result[k]*=-1
+ }
+ cache.set(id,result);return result
 }
 export function motifDistance(id:PatternName,u:number,v:number){const g=cache.get(id)||bake(id),x=((u%1+1)%1)*N,y=((v%1+1)%1)*N,i=Math.floor(x),j=Math.floor(y),a=x-i,b=y-j
  return (g[j*N+i]*(1-a)+g[j*N+(i+1)%N]*a)*(1-b)+(g[((j+1)%N)*N+i]*(1-a)+g[((j+1)%N)*N+(i+1)%N]*a)*b

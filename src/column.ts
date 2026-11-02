@@ -8,11 +8,13 @@ export const palette = [
  {id:'rosettes',name:'01 · Floral medallions',source:'column-floral.jpg',note:'Floret inside an octagon; plus cells connect vertically and horizontally, with hexagonal cells at the four diagonal neighbors.'},
  {id:'floralmeander',name:'02 · Flower & key',source:'column-flower-key.jpg',note:'Interlocking bent-cross ribbons around a square filled with a floret.'},
  {id:'cells',name:'03 · Square & hexagon',source:'column-cells.jpg',note:'Hexagonal cells with square interstices, sharing their boundaries.'},
- {id:'arches',name:'04 · Scalloped scales',source:'column-scales.jpg',note:'Staggered semicircles meet at endpoints and crests; no crossing arcs.'},
+ {id:'arches',name:'04 · Scalloped scales',source:'column-scales.jpg',note:'Rounded scale voids end in a downward cusp. Alternate rows shift by half a repeat.'},
  {id:'leafchevron',name:'05 · Leaf & key',source:'column-leaf.jpg',note:'The diagonal column in photos 2988 and 2989: sheared bent-cross ribbons with a leaf replacing the floret.'},
  {id:'weave',name:'06 · Plus tessellation',source:'column-cross.jpg',note:'Gap-free plus-shaped tiles on a diagonal lattice; shared edges form the ornament.'},
- {id:'meander',name:'07 · Alternating I',source:'column-key.jpg',note:'Vertical and horizontal I figures alternate: each vertical I has four horizontal neighbors.'},
+ {id:'meander',name:'07 · Alternating I',source:'column-key.jpg',note:'Upright and sideways I-shaped recesses alternate on a checkerboard grid.'},
  {id:'vertical',name:'08 · Vertical ribs',source:'',note:'Straight vertical lines connect the lower and upper motifs through the same transition field.'},
+ {id:'pluses',name:'09 · Intersecting pluses',source:'pluses.svg',note:'Plus-shaped voids interlock on an offset grid, five per square repeat.'},
+ {id:'spiral',name:'10 · Spiral',source:'spiral.svg',note:'Parallel diagonal grooves wrap into helices around the column.'},
 ] as const
 export const initialColumn:Column={name:'Ulu Cami / Column 01',config:{...defaults,treatment:'relief',diameter:120,projection:3,repeats:8,pitch:30,ridge:3,layer:1.5,seamMode:'auto',passes:1,margin:0},maxHeight:300,transition:18,rim:3,finish:'continuous',joint:{bore:0,outside:0,clearance:.8},segments:[{id:'base',motif:'meander',height:120,rotation:0},{id:'middle',motif:'rosettes',height:150,rotation:0},{id:'top',motif:'arches',height:120,rotation:0}]}
 const smooth=(t:number)=>{t=Math.max(0,Math.min(1,t));return t*t*t*(t*(t*6-15)+10)}
